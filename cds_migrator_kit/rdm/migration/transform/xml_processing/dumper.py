@@ -45,7 +45,7 @@ class CDSRecordDump:
 
     def prepare_revisions(self):
         """Prepare revisions."""
-        self.latest_revision = self._prepare_revision(self.data["record"].pop(-1))
+        self.latest_revision = self._prepare_revision(self.data["record"][-1])
 
     def prepare_files(self):
         """Get files from data dump."""

@@ -10,8 +10,8 @@
 import logging
 
 
-class StatsLogger:
-    """Migrator stats logger."""
+class AffiliationsLogger:
+    """Migrator affiliations logger."""
 
     @classmethod
     def initialize(cls, log_dir):
@@ -19,13 +19,13 @@ class StatsLogger:
         formatter = logging.Formatter(
             fmt="%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
-        logger = logging.getLogger("stats-migrator")
-        fh = logging.FileHandler(log_dir / "success.log")
+        logger = logging.getLogger("affiliations-migrator")
+        fh = logging.FileHandler(log_dir / "matched.log")
         logger.setLevel(logging.WARNING)
         logger.addHandler(fh)
 
         # errors to file
-        fh = logging.FileHandler(log_dir / "error.log")
+        fh = logging.FileHandler(log_dir / "unmatched.log")
         fh.setLevel(logging.ERROR)
         fh.setFormatter(formatter)
         logger.addHandler(fh)
@@ -39,4 +39,4 @@ class StatsLogger:
     @classmethod
     def get_logger(cls):
         """Get migration logger."""
-        return logging.getLogger("stats-migrator")
+        return logging.getLogger("affiliations-migrator")
