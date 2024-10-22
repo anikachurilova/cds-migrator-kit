@@ -17,6 +17,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import arrow
+import requests
 from invenio_rdm_migrator.streams.records.transform import (
     RDMRecordEntry,
     RDMRecordTransform,
@@ -195,40 +196,73 @@ class CDSToRDMRecordEntry(RDMRecordEntry):
 
         return user.id
 
+    processed_affiliations = []
+
+    def affiliations_search(self, affiliation_name):
+
+        def get_ror_affiliation(affiliation):
+            url = "https://api.ror.org/organizations"
+            params = {"affiliation": affiliation}
+
+            try:
+                response = requests.get(url, params=params)
+                response.raise_for_status()
+                items = response.json().get("items")
+                if items:
+                    for item in items:
+                        score = item.get("score")
+                        if score > 0.9:
+                            return item
+                return None
+            except requests.exceptions.HTTPError as http_err:
+                print(f"HTTP error occurred: {http_err}")
+                return None
+            except Exception as err:
+                print(f"Other error occurred: {err}")
+                return None
+
+        closest_match = get_ror_affiliation(affiliation_name)
+
+        # this part is just for testing purposes
+        if affiliation_name not in CDSToRDMRecordEntry.processed_affiliations:
+            CDSToRDMRecordEntry.processed_affiliations.append(affiliation_name)
+            if closest_match:
+                found_str = f'Legacy affiliation: "{affiliation_name}". Closest match found: acronym: "{closest_match.get("organization", None).get("acronym", None)}"; name: "{closest_match.get("organization", None).get("name", None)}; ID: "{closest_match.get("organization", None).get("id", None)}"'
+                with open("output_found.txt", "a") as file:
+                    file.write(found_str + "\n")
+            else:
+                not_found_str = f'No match found for "{affiliation_name}".'
+                with open("output_not_found.txt", "a") as file:
+                    file.write(not_found_str + "\n")
+
+        return closest_match
+
     def _metadata(self, json_entry):
         def creators(json, key="creators"):
             _creators = deepcopy(json.get(key, []))
-            vocab_type = "affiliations"
-            service = current_service_registry.get(vocab_type)
-            extra_filter = dsl.Q("term", type__id=vocab_type)
             _creators = list(filter(lambda x: x is not None, _creators))
             for creator in _creators:
                 affiliations = creator.get("affiliations", [])
                 transformed_aff = []
                 for affiliation_name in affiliations:
-
-                    title = dsl.Q("match", **{f"title": affiliation_name})
-                    acronym = dsl.Q(
-                        "match_phrase", **{f"acronym.keyword": affiliation_name}
-                    )
-                    title_filter = dsl.query.Bool("should", should=[title, acronym])
-
-                    vocabulary_result = service.search(
-                        system_identity, extra_filter=title_filter | extra_filter
-                    ).to_dict()
-                    if vocabulary_result["hits"]["total"]:
+                    vocabulary_result = self.affiliations_search(affiliation_name)
+                    if vocabulary_result:
                         transformed_aff.append(
                             {
                                 "name": affiliation_name,
-                                "id": vocabulary_result["hits"]["hits"][0]["id"],
+                                # "id": vocabulary_result["id"].split('/')[-1] # commented out for now as some of the affiliations are not yet present in the db
                             }
                         )
                     else:
+                        transformed_aff.append({
+                            "name": affiliation_name,
+                        })
+                        creator["affiliations"] = transformed_aff
                         raise UnexpectedValue(
                             subfield="u",
                             value=affiliation_name,
                             field="author",
-                            message=f"Affiliation {affiliation_name} not found.",
+                            message=f"Affiliation {affiliation_name} not found in the vocabulary, adding it as a custom one.",
                             stage="vocabulary match",
                         )
                 creator["affiliations"] = transformed_aff
