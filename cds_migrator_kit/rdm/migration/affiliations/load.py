@@ -9,9 +9,11 @@
 import logging
 import os
 import json
+import psycopg2
 
 from invenio_db import db
 from invenio_rdm_migrator.load.base import Load
+from sqlalchemy.exc import IntegrityError
 
 from cds_rdm.models import CDSMigrationAffiliationMapping
 
@@ -34,36 +36,39 @@ class CDSAffiliationsLoad(Load):
         """Prepare the record."""
         pass
 
-    def _save_affiliation(self, legacy_recid, affiliations):
+    def _save_affiliation(self, affiliations):
         """."""
 
         for affiliation in affiliations:
             _affiliation_model = None
             _original_input = affiliation.pop("original_input")
-            if affiliation.get("matched_id"):
-                _affiliation_model = CDSMigrationAffiliationMapping(
-                    legacy_recid=legacy_recid,
-                    legacy_affiliation_input=_original_input,
-                    ror_exact_match=affiliation,
-                )
-            else:
-                _affiliation_model = CDSMigrationAffiliationMapping(
-                    legacy_recid=legacy_recid,
-                    legacy_affiliation_input=_original_input,
-                    ror_suggested_match=affiliation.get("ror_suggestions"),
-                )
-            db.session.add(_affiliation_model)
-            db.session.commit()
+            try:
+                if affiliation.get("matched_id"):
+                    _affiliation_model = CDSMigrationAffiliationMapping(
+                        legacy_affiliation_input=_original_input,
+                        ror_exact_match=affiliation,
+                    )
+                else:
+                    _affiliation_model = CDSMigrationAffiliationMapping(
+                        legacy_affiliation_input=_original_input,
+                        ror_suggested_match=affiliation.get("ror_suggestions"),
+                    )
+                db.session.add(_affiliation_model)
+                db.session.commit()
+            except IntegrityError as e:
+                db.session.rollback()
+                # We continue when the legacy affiliation input is already in the db
+                if isinstance(e.orig, psycopg2.errors.UniqueViolation):
+                    continue
 
     def _load(self, entry):
         """Use the services to load the entries."""
         if entry:
-            legacy_recid = entry["recid"]
             creators_affiliations = entry["creators_affiliations"]
             contributors_affiliations = entry["contributors_affiliations"]
             try:
-                self._save_affiliation(legacy_recid, creators_affiliations)
-                self._save_affiliation(legacy_recid, contributors_affiliations)
+                self._save_affiliation(creators_affiliations)
+                self._save_affiliation(contributors_affiliations)
             except Exception as ex:
                 logger.error(ex)
 

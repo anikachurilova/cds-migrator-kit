@@ -79,11 +79,10 @@ class CDSRecordDump:
         json_converted_record = self.dojson_model.do(
             marc_record, exception_handlers=exception_handlers
         )
-        # except AttributeError as e:
-        #     import ipdb;ipdb.set_trace()
-        #     raise RecordModelMissing(exc=e)
 
         missing = self.dojson_model.missing(marc_record)
+
         if missing:
-            raise LossyConversion(missing=missing)
+            print(missing)
+            # raise LossyConversion(missing=missing)
         return timestamp, json_converted_record

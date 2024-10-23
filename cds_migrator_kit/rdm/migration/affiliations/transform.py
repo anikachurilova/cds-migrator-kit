@@ -25,21 +25,8 @@ from invenio_rdm_migrator.streams.records.transform import (
 from opensearchpy import RequestError
 from sqlalchemy.exc import NoResultFound
 
-from cds_migrator_kit.rdm.migration.transform.users import CDSMissingUserLoad
+from cds_migrator_kit.rdm.migration.transform import affiliations_migrator_marc21
 from cds_migrator_kit.rdm.migration.transform.xml_processing.dumper import CDSRecordDump
-from cds_migrator_kit.rdm.migration.transform.xml_processing.errors import (
-    LossyConversion,
-    RestrictedFileDetected,
-    UnexpectedValue,
-    ManualImportRequired,
-    CDSMigrationException,
-    MissingRequiredField,
-)
-from cds_migrator_kit.records.log import RDMJsonLogger
-from invenio_access.permissions import system_identity
-from invenio_search.engine import dsl
-from invenio_records_resources.proxies import current_service_registry
-from invenio_accounts.models import User
 
 cli_logger = logging.getLogger("migrator")
 
@@ -58,6 +45,9 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
     def affiliations_search(self, affiliation_name):
 
         def get_ror_affiliation(affiliation):
+            """Query ROR organizations API to normalize affiliations."""
+            assert affiliation
+
             url = "https://api.ror.org/organizations"
             params = {"affiliation": affiliation}
 
@@ -69,9 +59,6 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
                     for item in items:
                         if item["chosen"] is True:
                             return (True, item)
-                        # score = item.get("score")
-                        # if score > 0.9:
-                        #     return item
                 return (False, items)
             except requests.exceptions.HTTPError as http_err:
                 cli_logger.exception(http_err)
@@ -91,6 +78,8 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
             affiliations = creator.get("affiliations", [])
 
             for affiliation_name in affiliations:
+                if not affiliation_name:
+                    continue
                 (chosen, match_or_suggestions) = self.affiliations_search(
                     affiliation_name
                 )
@@ -117,16 +106,12 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
     def _transform(self, entry):
         """Transform a single entry."""
         # creates the output structure for load step
-        # migration_logger = RDMJsonLogger()
-        record_dump = CDSRecordDump(
-            entry,
-        )
+        record_dump = CDSRecordDump(entry, dojson_model=affiliations_migrator_marc21)
         record_dump.prepare_revisions()
 
         timestamp, json_data = record_dump.latest_revision
         try:
             return {
-                "recid": entry["recid"],
                 "creators_affiliations": self._affiliations(json_data, "creators"),
                 "contributors_affiliations": self._affiliations(
                     json_data, "contributors"
