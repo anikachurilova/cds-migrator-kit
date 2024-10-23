@@ -31,6 +31,35 @@ from cds_migrator_kit.rdm.migration.transform.xml_processing.dumper import CDSRe
 cli_logger = logging.getLogger("migrator")
 
 
+def affiliations_search(affiliation_name):
+    """Query ROR organizations API to normalize affiliations."""
+
+    def get_ror_affiliation(affiliation):
+        """Query ROR organizations API to normalize affiliations."""
+        assert affiliation
+
+        url = "https://api.ror.org/organizations"
+        params = {"affiliation": affiliation}
+
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            items = response.json().get("items")
+            if items:
+                for item in items:
+                    if item["chosen"] is True:
+                        return (True, item)
+            return (False, items)
+        except requests.exceptions.HTTPError as http_err:
+            cli_logger.exception(http_err)
+        except Exception as err:
+            cli_logger.exception(err)
+
+    (chosen, affiliation) = get_ror_affiliation(affiliation_name)
+
+    return (chosen, affiliation)
+
+
 class CDSToRDMAffiliationTransform(RDMRecordTransform):
     """CDSToRDMAffiliationTransform."""
 
@@ -41,33 +70,6 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
         """Constructor."""
         self.dry_run = dry_run
         super().__init__()
-
-    def affiliations_search(self, affiliation_name):
-
-        def get_ror_affiliation(affiliation):
-            """Query ROR organizations API to normalize affiliations."""
-            assert affiliation
-
-            url = "https://api.ror.org/organizations"
-            params = {"affiliation": affiliation}
-
-            try:
-                response = requests.get(url, params=params)
-                response.raise_for_status()
-                items = response.json().get("items")
-                if items:
-                    for item in items:
-                        if item["chosen"] is True:
-                            return (True, item)
-                return (False, items)
-            except requests.exceptions.HTTPError as http_err:
-                cli_logger.exception(http_err)
-            except Exception as err:
-                cli_logger.exception(http_err)
-
-        (chosen, affiliation) = get_ror_affiliation(affiliation_name)
-
-        return (chosen, affiliation)
 
     def _affiliations(self, json_entry, key):
         _creators = deepcopy(json_entry.get(key, []))
@@ -80,9 +82,7 @@ class CDSToRDMAffiliationTransform(RDMRecordTransform):
             for affiliation_name in affiliations:
                 if not affiliation_name:
                     continue
-                (chosen, match_or_suggestions) = self.affiliations_search(
-                    affiliation_name
-                )
+                (chosen, match_or_suggestions) = affiliations_search(affiliation_name)
                 if chosen:
                     _affiliations.append(
                         {

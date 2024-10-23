@@ -164,6 +164,47 @@ python copy_collection_files.py --dump-folder /eos/media/cds/cds-rdm/dev/migrati
 5. click connect
 6. use eos account dev credentials
 
+### Collect and dump affiliation mapping
+
+In order to collect all affiliations from the collection dump folder run the following
+command pointing to the `cds_migrator_kit.rdm.migration.data.summer_student_reports.dump`
+folder:
+
+```
+invenio migration affiliations run --filepath /path/to/cds_migrator_kit/rdm/migration/data/summer_student_reports/dump
+```
+
+This will collect and check each affiliation against the ROR organization API, and store them in the `cds_rdm.models.CDSMigrationAffiliationMapping` table.
+
+To dump the content of this table and use it for records migration run the following command in a `invenio shell`
+
+```
+import json
+from invenio_db import db
+from cds_rdm.models import CDSMigrationAffiliationMapping
+
+# Query all records
+all_records = CDSMigrationAffiliationMapping.query.all()
+
+# Convert records into a dictionary
+data_dict = {
+    record.legacy_affiliation_input: {
+        "ror_exact_match": record.ror_exact_match,
+        "ror_suggested_match": record.ror_suggested_match
+    }
+    for record in all_records if record.legacy_affiliation_input is not None
+}
+
+# Save the dictionary as a JSON file
+with open('cds_migration_affiliations.json', 'w') as json_file:
+    json.dump(data_dict, json_file, indent=4)
+
+print("Data saved to cds_migration_affiliations.json")
+```
+
+Then, copy the `cds_migration_affiliations.json` to `cds_migrator_kit.rdm.migration.data.affiliations`.
+The file will be loaded with the default config and used for records migration.
+
 #### Openshift migration pod
 
 ```shell
